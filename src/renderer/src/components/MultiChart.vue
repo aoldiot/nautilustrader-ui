@@ -74,8 +74,8 @@ const showEMA26 = ref(false)
 const showBB = ref(false)
 const showMarkers = ref(true)
 const showVolume = ref(true)
-const showEquityChart = ref(true)
-const showDrawdownChart = ref(true)
+const showEquityChart = ref(false)
+const showDrawdownChart = ref(false)
 
 const detectedIndicators = ref<string[]>([])
 const showIndicators = ref<Record<string, boolean>>({})
@@ -243,7 +243,7 @@ async function updateActiveChartData() {
       detectedIndicators.value = cols
       cols.forEach(c => {
         if (showIndicators.value[c] === undefined) {
-          showIndicators.value[c] = true
+          showIndicators.value[c] = false
         }
       })
       activeChartData.value = {
@@ -284,7 +284,7 @@ async function switchTimeframe(_tf: string, tfSecs: number) {
     if (lastFetchedSymbol === symbolToFetch) {
       detectedIndicators.value = cols
       cols.forEach(c => {
-        if (showIndicators.value[c] === undefined) showIndicators.value[c] = true
+        if (showIndicators.value[c] === undefined) showIndicators.value[c] = false
       })
       activeChartData.value = {
         bars,

@@ -2,7 +2,6 @@
 import { ref, onMounted } from 'vue'
 import {
   Download,
-  BarChart3,
   CandlestickChart,
   CheckCircle2,
   AlertTriangle,
@@ -10,10 +9,9 @@ import {
   MoreVertical,
   Globe,
   Workflow,
-  ArrowLeft,
-  FolderOpen
+  FolderOpen,
+  RefreshCw
 } from 'lucide-vue-next'
-import DetailedMetrics from './components/DetailedMetrics.vue'
 import MultiChart from './components/MultiChart.vue'
 import DataManagement from './components/DataManagement.vue'
 import {
@@ -25,13 +23,14 @@ import {
 } from './services/duckdb'
 
 // Active tab selection
-const activeTab = ref<'metrics' | 'report' | 'kline'>('metrics')
+const activeTab = ref<'list' | 'report' | 'kline'>('list')
 const viewMode = ref<'backtest' | 'data'>('backtest')
 
 const backtestResultsPath = ref<string | null>(null)
 const scannedRuns = ref<any[]>([])
 const selectedRunId = ref<string | null>(null)
 const currentRunPath = ref<string | null>(null)        // 当前加载的回测目录路径
+const projectRootPath = ref<string | null>(null)
 const availableTimeframes = ref<string[]>([])           // 可用的预聚合时间框架列表
 const loadedTimeframe = ref<string>('15m')              // 当前已加载的时间框架
 const sidecarPortVal = ref<number | null>(null)         // 当前运行的 sidecar 端口
@@ -55,19 +54,21 @@ onMounted(async () => {
     const stored = await window.nautilusAPI.getStoredResultsPath()
     if (stored.backtestResultsPath) {
       backtestResultsPath.value = stored.backtestResultsPath
+      const projectPath = await window.nautilusAPI.getStoredProjectDir()
+      projectRootPath.value = projectPath
       await scanSubdirs()
-      
-      if (stored.selectedResultsSubdir) {
-        const matched = scannedRuns.value.find(r => r.id === stored.selectedResultsSubdir)
-        if (matched) {
-          selectedRunId.value = matched.id
-          await loadData(matched.path)
-        }
-      }
     }
   } catch (err) {
     console.error('Failed to load initial results path:', err)
   }
+
+  // Auto refresh listener
+  window.nautilusAPI.onResultsChanged(async () => {
+    console.log('[App] Detected changes in results, refreshing backtest list...')
+    if (backtestResultsPath.value) {
+      await scanSubdirs()
+    }
+  })
 })
 
 async function scanSubdirs() {
@@ -88,7 +89,8 @@ async function selectParentFolder() {
     error.value = null
     const path = await window.nautilusAPI.selectFolder()
     if (path) {
-      backtestResultsPath.value = path
+      backtestResultsPath.value = path + '/backtest_results'
+      projectRootPath.value = path
       await window.nautilusAPI.storeResultsPath(path)
       
       // Reset loaded states
@@ -114,15 +116,6 @@ async function selectRun(run: any) {
     error.value = err.message || '加载回测数据失败。'
     console.error(err)
   }
-}
-
-async function goBackToList() {
-  selectedRunId.value = null
-  chartData.value = null
-  summaryData.value = null
-  folderName.value = null
-  await scanSubdirs()
-  await window.nautilusAPI.storeSelectedSubdir(null)
 }
 
 async function loadData(path: string) {
@@ -166,7 +159,7 @@ async function loadData(path: string) {
       equity,
       indicators: []
     }
-    activeTab.value = 'metrics'
+    activeTab.value = 'report'
   } catch (err: any) {
     error.value = err.message || '加载回测数据时发生错误，请检查文件格式。'
     console.error(err)
@@ -262,31 +255,14 @@ function formatRawDate(raw: string) {
 
       <!-- Right Side Controls -->
       <div class="flex items-center gap-4">
-        <!-- When in dashboard view, show Back to List and Change Parent Folder buttons -->
-        <template v-if="chartData">
-          <button
-            @click="goBackToList"
-            class="flex items-center gap-1.5 px-3 py-1.5 border border-slate-800 hover:border-slate-700 bg-slate-900/60 hover:bg-slate-900 rounded-lg text-[10px] font-semibold text-slate-300 transition duration-150 cursor-pointer"
-          >
-            <ArrowLeft class="w-3.5 h-3.5 text-orange-500" />
-            返回列表
-          </button>
-          <button
-            @click="selectParentFolder"
-            class="flex items-center gap-1.5 px-3 py-1.5 border border-slate-800 hover:border-slate-700 bg-slate-900/60 hover:bg-slate-900 rounded-lg text-[10px] font-semibold text-slate-300 transition duration-150 cursor-pointer"
-          >
-            <Download class="w-3.5 h-3.5 text-orange-500" />
-            更换主目录
-          </button>
-        </template>
-        <!-- When in selection view, show Change Parent Folder -->
+        <!-- Always show Change Project Directory if path is set -->
         <button
-          v-else-if="backtestResultsPath"
+          v-if="backtestResultsPath"
           @click="selectParentFolder"
           class="flex items-center gap-1.5 px-3 py-1.5 border border-slate-800 hover:border-slate-700 bg-slate-900/60 hover:bg-slate-900 rounded-lg text-[10px] font-semibold text-slate-300 transition duration-150 cursor-pointer"
         >
           <Download class="w-3.5 h-3.5 text-orange-500" />
-          更换主目录
+          更换项目目录
         </button>
 
         <Sun class="w-4 h-4 text-slate-400 hover:text-slate-200 cursor-pointer transition" />
@@ -324,14 +300,14 @@ function formatRawDate(raw: string) {
           <h1 class="text-xl font-bold text-slate-100 mb-2">NautilusTrader 结果分析器</h1>
           <p class="text-xs text-slate-500 font-mono mb-8">NautilusTrader Results Analyzer v1.0.0</p>
           <p class="text-slate-400 text-xs mb-8 leading-relaxed">
-            请导入并加载包含回测子目录（如含有 <code class="bg-slate-950 px-1 py-0.5 rounded font-mono text-[10px]">summary.json</code>、<code class="bg-slate-950 px-1 py-0.5 rounded font-mono text-[10px]">bars.parquet</code> 等文件）的结果主文件夹。
+            请导入并加载 NautilusTrader 项目根目录（回测结果从 <code class="bg-slate-950 px-1 py-0.5 rounded font-mono text-[10px]">backtest_results</code> 获取，数据从 <code class="bg-slate-950 px-1 py-0.5 rounded font-mono text-[10px]">data</code> 获取）。
           </p>
           <button
             @click="selectParentFolder"
             class="flex items-center justify-center gap-2 w-full py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold transition duration-200 cursor-pointer shadow-lg hover:shadow-orange-600/10 border border-orange-500/30"
           >
             <FolderOpen class="w-4 h-4" />
-            选择结果主文件夹
+            选择项目根目录
           </button>
         </div>
       </div>
@@ -339,118 +315,24 @@ function formatRawDate(raw: string) {
       <!-- Data Management View -->
       <DataManagement v-else-if="viewMode === 'data'" />
 
-      <!-- Run Selection View (parent folder chosen, but no specific run loaded) -->
-      <div v-else-if="!chartData" class="flex-1 flex flex-col min-h-0 bg-slate-950 p-8 overflow-y-auto">
-        <div class="max-w-6xl w-full mx-auto flex flex-col gap-6">
-          
-          <!-- Header info -->
-          <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-900 pb-4 gap-4">
-            <div>
-              <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
-                <FolderOpen class="w-5 h-5 text-orange-500" />
-                已加载的回测记录
-              </h2>
-              <p class="text-xs text-slate-500 font-mono mt-1 break-all">
-                主目录路径: <span class="text-slate-400">{{ backtestResultsPath }}</span>
-              </p>
-            </div>
-            <button
-              @click="selectParentFolder"
-              class="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900/60 hover:bg-slate-900 rounded-lg text-xs font-semibold text-slate-300 transition cursor-pointer"
-            >
-              更换主目录
-            </button>
-          </div>
-
-          <!-- Empty child records -->
-          <div v-if="scannedRuns.length === 0" class="border border-dashed border-slate-900 rounded-2xl p-12 text-center select-none mt-4">
-            <AlertTriangle class="w-10 h-10 text-amber-500 mx-auto mb-4" />
-            <h3 class="text-sm font-bold text-slate-300">未找到有效回测记录</h3>
-            <p class="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
-              当前目录下未扫描到包含 <code class="bg-slate-900 px-1 py-0.5 rounded text-[10px]">summary.json</code>、<code class="bg-slate-900 px-1 py-0.5 rounded text-[10px]">bars.parquet</code> 和 <code class="bg-slate-900 px-1 py-0.5 rounded text-[10px]">equity.parquet</code> 齐全的回测记录子文件夹。请检查目录是否正确，或重新运行回测。
-            </p>
-          </div>
-
-          <!-- List display of runs -->
-          <div v-else class="bg-slate-900/10 border border-slate-900 rounded-xl overflow-hidden shadow-lg">
-            <div class="overflow-x-auto">
-              <table class="w-full border-collapse font-mono text-xs text-left">
-                <thead>
-                  <tr class="bg-slate-950/40 border-b border-slate-900 text-slate-500 font-bold select-none">
-                    <th class="py-3.5 px-5">策略名称</th>
-                    <th class="py-3.5 px-4">执行时间</th>
-                    <th class="py-3.5 px-4">回测区间</th>
-                    <th class="py-3.5 px-4 text-center">夏普比率</th>
-                    <th class="py-3.5 px-4 text-center">最大回撤</th>
-                    <th class="py-3.5 px-4 text-center">胜率</th>
-                    <th class="py-3.5 px-5 text-right">净利润</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-900/50">
-                  <tr
-                    v-for="run in scannedRuns"
-                    :key="run.id"
-                    @click="selectRun(run)"
-                    class="hover:bg-slate-900/40 transition duration-150 cursor-pointer group"
-                  >
-                    <!-- Strategy Name -->
-                    <td class="py-4 px-5 font-bold">
-                      <span class="text-orange-400 group-hover:text-orange-300 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20 text-[10px]">
-                        {{ parseRunName(run.id).strategy }}
-                      </span>
-                    </td>
-                    <!-- Executed Time -->
-                    <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
-                      {{ parseRunName(run.id).runTime }}
-                    </td>
-                    <!-- Backtest Period -->
-                    <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
-                      {{ parseRunName(run.id).period }}
-                    </td>
-                    <!-- Sharpe Ratio -->
-                    <td class="py-4 px-4 text-center font-bold text-slate-300">
-                      {{ run.summary?.sharpe_ratio != null ? run.summary.sharpe_ratio.toFixed(2) : 'N/A' }}
-                    </td>
-                    <!-- Max Drawdown -->
-                    <td class="py-4 px-4 text-center font-bold text-rose-400">
-                      {{ run.summary?.max_drawdown != null ? (run.summary.max_drawdown * 100).toFixed(1) + '%' : 'N/A' }}
-                    </td>
-                    <!-- Win Rate -->
-                    <td class="py-4 px-4 text-center font-bold text-emerald-400">
-                      {{ run.summary?.win_rate != null ? (run.summary.win_rate * 100).toFixed(1) + '%' : 'N/A' }}
-                    </td>
-                    <!-- Net Profit -->
-                    <td class="py-4 px-5 text-right font-bold font-mono">
-                      <span :class="(run.summary?.net_profit || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'">
-                        {{ (run.summary?.net_profit || 0) >= 0 ? '+' : '' }}${{ run.summary?.net_profit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00' }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Main Dashboard View (specific backtest run is loaded) -->
+      <!-- Backtest Workspace View -->
       <div v-else class="flex-1 flex flex-col min-h-0">
         <!-- Sub-Navigation Tab Bar -->
         <div class="h-12 shrink-0 border-b border-slate-900 bg-slate-950/20 flex items-center px-6 gap-2 z-10 select-none font-mono text-xs">
           <button
-            @click="activeTab = 'metrics'"
+            @click="activeTab = 'list'"
             class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold transition duration-200 cursor-pointer"
-            :class="activeTab === 'metrics'
+            :class="activeTab === 'list'
               ? 'bg-orange-500/10 border border-orange-500/30 text-orange-400'
               : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'"
           >
-            <BarChart3 class="w-3.5 h-3.5 text-orange-500" />
-            核心指标
+            <FolderOpen class="w-3.5 h-3.5 text-orange-500" />
+            回测列表
           </button>
           <button
-            @click="activeTab = 'report'"
-            class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold transition duration-200 cursor-pointer"
+            @click="chartData ? activeTab = 'report' : null"
+            :disabled="!chartData"
+            class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold transition duration-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             :class="activeTab === 'report'
               ? 'bg-orange-500/10 border border-orange-500/30 text-orange-400'
               : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'"
@@ -459,8 +341,9 @@ function formatRawDate(raw: string) {
             回测报告
           </button>
           <button
-            @click="activeTab = 'kline'"
-            class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold transition duration-200 cursor-pointer"
+            @click="chartData ? activeTab = 'kline' : null"
+            :disabled="!chartData"
+            class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold transition duration-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             :class="activeTab === 'kline'
               ? 'bg-orange-500/10 border border-orange-500/30 text-orange-400'
               : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'"
@@ -471,14 +354,100 @@ function formatRawDate(raw: string) {
         </div>
 
         <!-- Tab Views -->
-        <div class="flex-1 flex flex-col min-h-0">
-          <DetailedMetrics
-            v-if="activeTab === 'metrics'"
-            :summary="summaryData"
-            :equity="chartData.equity"
-            :fills="chartData.fills"
-            :folderName="folderName"
-          />
+        <div class="flex-1 flex flex-col min-h-0 relative">
+          <!-- 1. Backtest List View -->
+          <div v-if="activeTab === 'list'" class="flex-1 flex flex-col min-h-0 bg-slate-950 p-8 overflow-y-auto">
+            <div class="max-w-6xl w-full mx-auto flex flex-col gap-6">
+              <!-- Header info -->
+              <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-900 pb-4 gap-4">
+                <div>
+                  <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                    <FolderOpen class="w-5 h-5 text-orange-500" />
+                    已加载的回测记录
+                  </h2>
+                  <p class="text-xs text-slate-500 font-mono mt-1 break-all">
+                    项目根目录: <span class="text-slate-400">{{ projectRootPath }}</span>
+                  </p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button
+                    @click="scanSubdirs"
+                    :disabled="loading"
+                    class="p-2 border border-slate-800 hover:border-slate-700 rounded-lg bg-slate-900/50 text-slate-400 hover:text-slate-200 transition disabled:opacity-50 cursor-pointer"
+                    title="手动刷新列表"
+                  >
+                    <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': loading }" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Empty child records -->
+              <div v-if="scannedRuns.length === 0" class="border border-dashed border-slate-900 rounded-2xl p-12 text-center select-none mt-4">
+                <AlertTriangle class="w-10 h-10 text-amber-500 mx-auto mb-4" />
+                <h3 class="text-sm font-bold text-slate-300">未找到有效回测记录</h3>
+                <p class="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+                  当前目录下未扫描到包含 <code class="bg-slate-900 px-1 py-0.5 rounded text-[10px]">summary.json</code>、<code class="bg-slate-900 px-1 py-0.5 rounded text-[10px]">bars.parquet</code> 和 <code class="bg-slate-900 px-1 py-0.5 rounded text-[10px]">equity.parquet</code> 齐全的回测记录子文件夹。请检查目录是否正确，或重新运行回测。
+                </p>
+              </div>
+
+              <!-- List display of runs -->
+              <div v-else class="bg-slate-900/10 border border-slate-900 rounded-xl overflow-hidden shadow-lg">
+                <div class="overflow-x-auto">
+                  <table class="w-full border-collapse font-mono text-xs text-left">
+                    <thead>
+                      <tr class="bg-slate-950/40 border-b border-slate-900 text-slate-500 font-bold select-none">
+                        <th class="py-3.5 px-5">策略名称</th>
+                        <th class="py-3.5 px-4">执行时间</th>
+                        <th class="py-3.5 px-4">回测区间</th>
+                        <th class="py-3.5 px-4 text-center">总收益 (PnL%(total))</th>
+                        <th class="py-3.5 px-4 text-center">最大回撤</th>
+                        <th class="py-3.5 px-4 text-center">胜率 (Win Rate)</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-900/50">
+                      <tr
+                        v-for="run in scannedRuns"
+                        :key="run.id"
+                        @click="selectRun(run)"
+                        class="hover:bg-slate-900/40 transition duration-150 cursor-pointer group"
+                      >
+                        <!-- Strategy Name -->
+                        <td class="py-4 px-5 font-bold">
+                          <span class="text-orange-400 group-hover:text-orange-300 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20 text-[10px]">
+                            {{ parseRunName(run.id).strategy }}
+                          </span>
+                        </td>
+                        <!-- Executed Time -->
+                        <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                          {{ parseRunName(run.id).runTime }}
+                        </td>
+                        <!-- Backtest Period -->
+                        <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                          {{ parseRunName(run.id).period }}
+                        </td>
+                        <!-- Total Return -->
+                        <td class="py-4 px-4 text-center font-bold">
+                          <span :class="(run.summary?.total_return || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'">
+                            {{ run.summary?.total_return != null ? ((run.summary.total_return >= 0 ? '+' : '') + (run.summary.total_return * 100).toFixed(2) + '%') : 'N/A' }}
+                          </span>
+                        </td>
+                        <!-- Max Drawdown -->
+                        <td class="py-4 px-4 text-center font-bold text-rose-400">
+                          {{ run.summary?.max_drawdown != null ? (run.summary.max_drawdown * 100).toFixed(1) + '%' : 'N/A' }}
+                        </td>
+                        <!-- Win Rate -->
+                        <td class="py-4 px-4 text-center font-bold text-slate-300">
+                          {{ run.summary?.win_rate != null ? (run.summary.win_rate * 100).toFixed(1) + '%' : 'N/A' }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Backtest Report View -->
           <div v-else-if="activeTab === 'report'" class="flex-1 flex flex-col min-h-0 bg-slate-950 relative">
             <iframe
               v-if="sidecarPortVal"
@@ -490,6 +459,8 @@ function formatRawDate(raw: string) {
               未检测到运行中的 Python 侧边服务器，无法加载 HTML 报告。
             </div>
           </div>
+
+          <!-- 3. KLine Chart View -->
           <div v-else-if="activeTab === 'kline'" class="flex-1 flex min-h-0 bg-slate-950">
             <MultiChart
               :data="chartData"

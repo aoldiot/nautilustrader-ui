@@ -3,7 +3,6 @@ import { ref, onMounted, computed } from 'vue'
 import {
   Database,
   Download,
-  FolderOpen,
   Calendar,
   RefreshCw,
   AlertTriangle,
@@ -74,18 +73,7 @@ async function loadProjectPath() {
   }
 }
 
-async function selectProject() {
-  try {
-    error.value = null
-    const path = await window.nautilusAPI.selectProjectDir()
-    if (path) {
-      projectPath.value = path
-      await refreshCoverage()
-    }
-  } catch (err: any) {
-    error.value = err.message || '选择项目路径失败'
-  }
-}
+
 
 async function refreshCoverage() {
   if (!projectPath.value) return
@@ -169,13 +157,6 @@ async function startDownload() {
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <button
-            @click="selectProject"
-            class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-xs font-semibold text-slate-300 transition cursor-pointer"
-          >
-            <FolderOpen class="w-3.5 h-3.5 text-orange-500" />
-            选择项目目录
-          </button>
           <button
             v-if="projectPath"
             @click="refreshCoverage"

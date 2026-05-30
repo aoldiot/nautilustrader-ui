@@ -1,4 +1,4 @@
-# my-app
+# nautilusUI
 
 An Electron application with Vue and TypeScript
 

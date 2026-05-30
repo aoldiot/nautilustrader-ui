@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, basename } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import * as fs from 'fs/promises'
+import { watch } from 'fs'
 import { spawn } from 'child_process'
 import icon from '../../resources/icon.png?asset'
 import { generateBacktestScript } from './backtest_template'
@@ -11,6 +12,41 @@ import { DOWNLOAD_DATA_CONTENT } from './download_data_content'
 
 let mainWindow: BrowserWindow | null = null
 let sidecarProcess: any = null
+let resultsWatcher: any = null
+
+function watchResultsDirectory(projectPath: string) {
+  if (resultsWatcher) {
+    try {
+      resultsWatcher.close()
+    } catch (e) {
+      console.error('Failed to close previous results watcher:', e)
+    }
+    resultsWatcher = null
+  }
+
+  if (!projectPath) return
+
+  const resultsPath = join(projectPath, 'backtest_results')
+  try {
+    const fsSync = require('fs')
+    if (!fsSync.existsSync(resultsPath)) {
+      fsSync.mkdirSync(resultsPath, { recursive: true })
+    }
+
+    let debounceTimeout: NodeJS.Timeout | null = null
+    resultsWatcher = watch(resultsPath, { recursive: true }, () => {
+      if (debounceTimeout) clearTimeout(debounceTimeout)
+      debounceTimeout = setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('backtest:results-changed')
+        }
+      }, 800)
+    })
+    console.log(`[Watcher] Started watching backtest results in: ${resultsPath}`)
+  } catch (err) {
+    console.error('Failed to setup backtest results watcher:', err)
+  }
+}
 
 function getExecutionTime(name: string, stats: any): number {
   // Try Format A: TripleEMA_20241001_20260101_20260530_160852
@@ -99,11 +135,18 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // Initialize directory watcher if project path is already saved
+  readConfig().then((config) => {
+    if (config.projectPath) {
+      watchResultsDirectory(config.projectPath)
+    }
+  })
+
   // IPC handlers for NautilusTrader Backtest Analyzer
   ipcMain.handle('nautilus:select-folder', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
-      title: 'Select NautilusTrader Backtest Results Folder'
+      title: '选择 NautilusTrader 项目根目录'
     })
     if (result.canceled || result.filePaths.length === 0) {
       return null
@@ -154,17 +197,29 @@ app.whenReady().then(() => {
 
   ipcMain.handle('nautilus:get-stored-results-path', async () => {
     const config = await readConfig()
+    const projectPath = config.projectPath || null
     return {
-      backtestResultsPath: config.backtestResultsPath || null,
+      backtestResultsPath: projectPath ? join(projectPath, 'backtest_results') : null,
       selectedResultsSubdir: config.selectedResultsSubdir || null
     }
   })
 
   ipcMain.handle('nautilus:store-results-path', async (_, path: string | null) => {
-    return await writeConfig({
-      backtestResultsPath: path,
+    const success = await writeConfig({
+      projectPath: path,
       selectedResultsSubdir: null // Reset sub-directory selection on parent path change
     })
+    if (success) {
+      if (path) {
+        watchResultsDirectory(path)
+      } else {
+        if (resultsWatcher) {
+          resultsWatcher.close()
+          resultsWatcher = null
+        }
+      }
+    }
+    return success
   })
 
   ipcMain.handle('nautilus:store-selected-subdir', async (_, subdir: string | null) => {
@@ -591,7 +646,12 @@ function parsePythonStrategyFile(content: string, fileName: string, filePath: st
     strategyParams?: Record<string, any>
   }) => {
     try {
-      const backtestDir = join(app.getPath('userData'), 'backtests')
+      const config = await readConfig()
+      const projectPath = config.projectPath
+      if (!projectPath) {
+        throw new Error('未设置策略项目目录')
+      }
+      const backtestDir = join(projectPath, 'backtest_results')
       await fs.mkdir(backtestDir, { recursive: true })
       
       // Ensure the independent exporter utility is present in the runtime folder
@@ -679,7 +739,10 @@ function parsePythonStrategyFile(content: string, fileName: string, filePath: st
 
   ipcMain.handle('nautilus:list-backtests', async () => {
     try {
-      const backtestDir = join(app.getPath('userData'), 'backtests')
+      const config = await readConfig()
+      const projectPath = config.projectPath
+      if (!projectPath) return []
+      const backtestDir = join(projectPath, 'backtest_results')
       try {
         await fs.access(backtestDir)
       } catch {
@@ -727,7 +790,10 @@ function parsePythonStrategyFile(content: string, fileName: string, filePath: st
 
   ipcMain.handle('nautilus:delete-backtest', async (_, runId: string) => {
     try {
-      const backtestDir = join(app.getPath('userData'), 'backtests')
+      const config = await readConfig()
+      const projectPath = config.projectPath
+      if (!projectPath) throw new Error('未设置项目路径')
+      const backtestDir = join(projectPath, 'backtest_results')
       const runPath = join(backtestDir, runId)
       
       // 安全路径守护，防止目录遍历攻击

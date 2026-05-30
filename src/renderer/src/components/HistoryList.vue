@@ -170,10 +170,9 @@ onMounted(() => {
               <th class="py-3.5 px-5">策略名称</th>
               <th class="py-3.5 px-4">执行时间</th>
               <th class="py-3.5 px-4">回测区间</th>
-              <th class="py-3.5 px-4 text-center">夏普比率</th>
+              <th class="py-3.5 px-4 text-center">总收益 (PnL%(total))</th>
               <th class="py-3.5 px-4 text-center">最大回撤</th>
-              <th class="py-3.5 px-4 text-center">胜率</th>
-              <th class="py-3.5 px-5 text-right">净利润</th>
+              <th class="py-3.5 px-4 text-center">胜率 (Win Rate)</th>
               <th class="py-3.5 px-5 text-right">操作</th>
             </tr>
           </thead>
@@ -197,23 +196,19 @@ onMounted(() => {
               <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
                 {{ parseRunName(run.id).period }}
               </td>
-              <!-- Sharpe Ratio -->
-              <td class="py-4 px-4 text-center font-bold text-slate-300">
-                {{ run.summary?.sharpe_ratio != null ? run.summary.sharpe_ratio.toFixed(2) : 'N/A' }}
+              <!-- Total Return -->
+              <td class="py-4 px-4 text-center font-bold">
+                <span :class="(run.summary?.total_return || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'">
+                  {{ run.summary?.total_return != null ? ((run.summary.total_return >= 0 ? '+' : '') + (run.summary.total_return * 100).toFixed(2) + '%') : 'N/A' }}
+                </span>
               </td>
               <!-- Max Drawdown -->
               <td class="py-4 px-4 text-center font-bold text-rose-400">
                 {{ run.summary?.max_drawdown != null ? (run.summary.max_drawdown * 100).toFixed(1) + '%' : 'N/A' }}
               </td>
               <!-- Win Rate -->
-              <td class="py-4 px-4 text-center font-bold text-emerald-400">
+              <td class="py-4 px-4 text-center font-bold text-slate-300">
                 {{ run.summary?.win_rate != null ? (run.summary.win_rate * 100).toFixed(1) + '%' : 'N/A' }}
-              </td>
-              <!-- Net Profit -->
-              <td class="py-4 px-5 text-right font-bold font-mono">
-                <span :class="(run.summary?.net_profit || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'">
-                  {{ (run.summary?.net_profit || 0) >= 0 ? '+' : '' }}${{ run.summary?.net_profit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00' }}
-                </span>
               </td>
               <!-- Actions -->
               <td class="py-4 px-5 text-right whitespace-nowrap">

@@ -43,6 +43,7 @@ interface NautilusAPI {
     timeframes?: string
   }): Promise<{ success: boolean }>
   onDownloadLog(callback: (log: string) => void): () => void
+  onResultsChanged(callback: () => void): () => void
 }
 
 export interface ScannedResultsRun {

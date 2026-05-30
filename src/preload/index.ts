@@ -46,6 +46,13 @@ const nautilusAPI = {
     ipcRenderer.invoke('nautilus:store-selected-subdir', subdir),
   scanResultsSubdirs: (resultsPath: string): Promise<any[]> => 
     ipcRenderer.invoke('nautilus:scan-results-subdirs', resultsPath),
+  onResultsChanged: (callback: () => void): (() => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('backtest:results-changed', listener)
+    return () => {
+      ipcRenderer.removeListener('backtest:results-changed', listener)
+    }
+  },
   getDataCoverage: (projectPath: string): Promise<any[]> => 
     ipcRenderer.invoke('nautilus:get-data-coverage', projectPath),
   downloadData: (params: { projectPath: string; startDate: string; endDate: string; pairs?: string; timeframes?: string }): Promise<{ success: boolean }> => 
