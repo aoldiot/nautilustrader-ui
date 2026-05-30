@@ -40,12 +40,17 @@ jobs:
           # Disables code signing auto-discovery on macOS if signing certificates are not set up.
           # This allows building unsigned DMGs for testing.
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          # Secrets for signing (will be empty if not configured in GitHub repository secrets)
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
+          # 仅当 Secrets 存在且非空时，才在 Shell 中导出对应的签名变量
+          if [ -n "${{ secrets.CSC_LINK }}" ]; then
+            export CSC_LINK="${{ secrets.CSC_LINK }}"
+            export CSC_KEY_PASSWORD="${{ secrets.CSC_KEY_PASSWORD }}"
+          fi
+          if [ -n "${{ secrets.WIN_CSC_LINK }}" ]; then
+            export WIN_CSC_LINK="${{ secrets.WIN_CSC_LINK }}"
+            export WIN_CSC_KEY_PASSWORD="${{ secrets.WIN_CSC_KEY_PASSWORD }}"
+          fi
+
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
             npm run build:mac
           elif [ "${{ matrix.os }}" = "windows-latest" ]; then
