@@ -63,23 +63,51 @@ function handleAnalyze(path: string) {
   emit('load', path)
 }
 
-function formatDate(timestamp: number): string {
-  if (!timestamp) return '--'
-  const date = new Date(timestamp)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
+
+function parseRunName(name: string) {
+  const parts = name.split('_')
+  
+  if (parts.length >= 5) {
+    const strategy = parts[0]
+    const startDate = formatRawDate(parts[1])
+    const endDate = formatRawDate(parts[2])
+    const runDate = parts[3]
+    const runTime = parts[4]
+    
+    let formattedRunTime = ''
+    if (runDate && runTime && runDate.length === 8 && runTime.length === 6) {
+      formattedRunTime = `${runDate.slice(0, 4)}-${runDate.slice(4, 6)}-${runDate.slice(6, 8)} ${runTime.slice(0, 2)}:${runTime.slice(2, 4)}:${runTime.slice(4, 6)}`
+    }
+    
+    return {
+      strategy,
+      period: `${startDate} 至 ${endDate}`,
+      runTime: formattedRunTime || name
+    }
+  }
+  
+  const dateMatch = name.match(/^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_(.*)$/)
+  if (dateMatch) {
+    const runTime = `${dateMatch[1]} ${dateMatch[2].replace(/-/g, ':')}`
+    return {
+      strategy: dateMatch[3],
+      period: '内置模拟回测',
+      runTime
+    }
+  }
+
+  return {
+    strategy: name,
+    period: '未知回测区间',
+    runTime: '未知执行时间'
+  }
 }
 
-function formatPercentage(val?: number): string {
-  if (val === undefined || val === null) return '--'
-  const displayVal = Math.abs(val) < 1.01 && val !== 0 ? val * 100 : val
-  return `${displayVal.toFixed(2)}%`
+function formatRawDate(raw: string) {
+  if (raw && raw.length === 8) {
+    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
+  }
+  return raw
 }
 
 onMounted(() => {
@@ -133,56 +161,81 @@ onMounted(() => {
       </p>
     </div>
 
-    <!-- Records List -->
-    <div v-else class="flex flex-col gap-4 max-w-5xl">
-      <div
-        v-for="run in runs"
-        :key="run.id"
-        class="bg-slate-900/40 border border-slate-900/80 hover:border-slate-800/80 rounded-xl p-4 flex items-center justify-between gap-4 transition duration-200"
-      >
-        <!-- Info Column -->
-        <div class="flex items-center gap-4 min-w-0">
-          <div class="w-10 h-10 rounded-lg bg-orange-600/10 border border-orange-500/20 flex items-center justify-center text-orange-500 shrink-0">
-            <Package class="w-5 h-5" />
-          </div>
-          <div class="min-w-0">
-            <h4 class="text-slate-100 font-bold text-sm tracking-wide font-mono truncate">
-              {{ run.name }}
-            </h4>
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 mt-1 font-mono">
-              <span>时间: {{ formatDate(run.createdAt) }}</span>
-              <span v-if="run.summary" class="flex items-center gap-2">
-                <span class="w-1 h-1 rounded-full bg-slate-700"></span>
-                <span>收益率: <span :class="(run.summary.net_profit || 0) >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'">{{ formatPercentage(run.summary.total_return) }}</span></span>
-                <span class="w-1 h-1 rounded-full bg-slate-700"></span>
-                <span>夏普: <span class="text-slate-300 font-semibold">{{ run.summary.sharpe_ratio?.toFixed(2) || '--' }}</span></span>
-                <span class="w-1 h-1 rounded-full bg-slate-700"></span>
-                <span>胜率: <span class="text-slate-300 font-semibold">{{ formatPercentage(run.summary.win_rate) }}</span></span>
-                <span class="w-1 h-1 rounded-full bg-slate-700"></span>
-                <span>交易笔数: <span class="text-slate-300 font-semibold">{{ run.summary.total_trades || '--' }}</span></span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Action Column -->
-        <div class="flex items-center gap-3 shrink-0">
-          <button
-            @click="handleAnalyze(run.path)"
-            class="flex items-center gap-1.5 px-4 py-2 border border-orange-500/20 hover:border-orange-500/50 bg-orange-600/10 hover:bg-orange-600/20 text-orange-400 hover:text-orange-300 font-bold rounded-lg transition duration-200"
-          >
-            分析结果
-          </button>
-          
-          <button
-            @click="handleDelete(run.id, $event)"
-            class="p-2 border border-slate-900 hover:border-rose-500/30 hover:bg-rose-500/5 text-slate-600 hover:text-rose-400 rounded-lg transition duration-200"
-            title="删除此记录"
-          >
-            <Trash2 class="w-4 h-4" />
-          </button>
-        </div>
-
+    <!-- Records List Table -->
+    <div v-else class="bg-slate-900/10 border border-slate-900 rounded-xl overflow-hidden shadow-lg max-w-5xl">
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse font-mono text-xs text-left">
+          <thead>
+            <tr class="bg-slate-950/40 border-b border-slate-900 text-slate-500 font-bold select-none">
+              <th class="py-3.5 px-5">策略名称</th>
+              <th class="py-3.5 px-4">执行时间</th>
+              <th class="py-3.5 px-4">回测区间</th>
+              <th class="py-3.5 px-4 text-center">夏普比率</th>
+              <th class="py-3.5 px-4 text-center">最大回撤</th>
+              <th class="py-3.5 px-4 text-center">胜率</th>
+              <th class="py-3.5 px-5 text-right">净利润</th>
+              <th class="py-3.5 px-5 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-900/50">
+            <tr
+              v-for="run in runs"
+              :key="run.id"
+              class="hover:bg-slate-900/40 transition duration-150 group"
+            >
+              <!-- Strategy Name -->
+              <td class="py-4 px-5 font-bold">
+                <span class="text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20 text-[10px]">
+                  {{ parseRunName(run.id).strategy }}
+                </span>
+              </td>
+              <!-- Executed Time -->
+              <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                {{ parseRunName(run.id).runTime }}
+              </td>
+              <!-- Backtest Period -->
+              <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                {{ parseRunName(run.id).period }}
+              </td>
+              <!-- Sharpe Ratio -->
+              <td class="py-4 px-4 text-center font-bold text-slate-300">
+                {{ run.summary?.sharpe_ratio != null ? run.summary.sharpe_ratio.toFixed(2) : 'N/A' }}
+              </td>
+              <!-- Max Drawdown -->
+              <td class="py-4 px-4 text-center font-bold text-rose-400">
+                {{ run.summary?.max_drawdown != null ? (run.summary.max_drawdown * 100).toFixed(1) + '%' : 'N/A' }}
+              </td>
+              <!-- Win Rate -->
+              <td class="py-4 px-4 text-center font-bold text-emerald-400">
+                {{ run.summary?.win_rate != null ? (run.summary.win_rate * 100).toFixed(1) + '%' : 'N/A' }}
+              </td>
+              <!-- Net Profit -->
+              <td class="py-4 px-5 text-right font-bold font-mono">
+                <span :class="(run.summary?.net_profit || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'">
+                  {{ (run.summary?.net_profit || 0) >= 0 ? '+' : '' }}${{ run.summary?.net_profit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00' }}
+                </span>
+              </td>
+              <!-- Actions -->
+              <td class="py-4 px-5 text-right whitespace-nowrap">
+                <div class="flex items-center justify-end gap-2">
+                  <button
+                    @click="handleAnalyze(run.path)"
+                    class="px-2.5 py-1 bg-orange-600/15 hover:bg-orange-600/25 border border-orange-500/35 hover:border-orange-500/60 text-orange-400 hover:text-orange-350 font-bold rounded text-[10px] transition duration-150 cursor-pointer"
+                  >
+                    分析结果
+                  </button>
+                  <button
+                    @click="handleDelete(run.id, $event)"
+                    class="p-1 border border-transparent hover:border-rose-500/35 hover:bg-rose-500/5 text-slate-500 hover:text-rose-400 rounded transition duration-150 cursor-pointer"
+                    title="删除此记录"
+                  >
+                    <Trash2 class="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

@@ -12,6 +12,45 @@ import { DOWNLOAD_DATA_CONTENT } from './download_data_content'
 let mainWindow: BrowserWindow | null = null
 let sidecarProcess: any = null
 
+function getExecutionTime(name: string, stats: any): number {
+  // Try Format A: TripleEMA_20241001_20260101_20260530_160852
+  const parts = name.split('_')
+  if (parts.length >= 5) {
+    const runDate = parts[3]
+    const runTime = parts[4]
+    if (runDate && runTime && runDate.length === 8 && runTime.length === 6) {
+      const year = parseInt(runDate.slice(0, 4), 10)
+      const month = parseInt(runDate.slice(4, 6), 10) - 1
+      const day = parseInt(runDate.slice(6, 8), 10)
+      const hour = parseInt(runTime.slice(0, 2), 10)
+      const min = parseInt(runTime.slice(2, 4), 10)
+      const sec = parseInt(runTime.slice(4, 6), 10)
+      const date = new Date(year, month, day, hour, min, sec)
+      if (!isNaN(date.getTime())) {
+        return date.getTime()
+      }
+    }
+  }
+
+  // Try Format B: 2026-05-28_11-45-30_BTC-USD
+  const dateMatch = name.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})_/)
+  if (dateMatch) {
+    const year = parseInt(dateMatch[1], 10)
+    const month = parseInt(dateMatch[2], 10) - 1
+    const day = parseInt(dateMatch[3], 10)
+    const hour = parseInt(dateMatch[4], 10)
+    const min = parseInt(dateMatch[5], 10)
+    const sec = parseInt(dateMatch[6], 10)
+    const date = new Date(year, month, day, hour, min, sec)
+    if (!isNaN(date.getTime())) {
+      return date.getTime()
+    }
+  }
+
+  // Fallback to stats birthtime or mtime
+  return stats.birthtimeMs || stats.mtimeMs || 0
+}
+
 function createWindow(): void {
   // Create the browser window.
   const win = new BrowserWindow({
@@ -175,13 +214,13 @@ app.whenReady().then(() => {
           id: file,
           name: file,
           path: runPath,
-          createdAt: stats.birthtimeMs || stats.mtimeMs,
+          createdAt: getExecutionTime(file, stats),
           summary
         })
       }
 
-      // Sort by id descending (usually starts with strategy_timestamp, alphabetical sorting puts latest first)
-      return runs.sort((a, b) => b.id.localeCompare(a.id))
+      // Sort by createdAt descending (newest backtest runs first)
+      return runs.sort((a, b) => b.createdAt - a.createdAt)
     } catch (error) {
       console.error('Scan results subdirs error:', error)
       return []
@@ -673,13 +712,13 @@ function parsePythonStrategyFile(content: string, fileName: string, filePath: st
           id: file,
           name: file, // e.g. "2026-05-28_11-45-30_BTC-USD"
           path: runPath,
-          createdAt: stats.birthtimeMs || stats.mtimeMs,
+          createdAt: getExecutionTime(file, stats),
           summary
         })
       }
 
-      // 按时间顺序（即ID字母序）降序排列，最新回测排在最前
-      return runs.sort((a, b) => b.id.localeCompare(a.id))
+      // Sort by createdAt descending (newest backtest runs first)
+      return runs.sort((a, b) => b.createdAt - a.createdAt)
     } catch (error) {
       console.error('List backtests error:', error)
       return []

@@ -11,10 +11,7 @@ import {
   Globe,
   Workflow,
   ArrowLeft,
-  FolderOpen,
-  Calendar,
-  Clock,
-  ChevronRight
+  FolderOpen
 } from 'lucide-vue-next'
 import DetailedMetrics from './components/DetailedMetrics.vue'
 import MultiChart from './components/MultiChart.vue'
@@ -374,62 +371,63 @@ function formatRawDate(raw: string) {
             </p>
           </div>
 
-          <!-- Grid cards display of runs -->
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div
-              v-for="run in scannedRuns"
-              :key="run.id"
-              @click="selectRun(run)"
-              class="group relative bg-slate-900/30 hover:bg-slate-900/60 border border-slate-900 hover:border-orange-500/30 rounded-xl p-5 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-lg hover:shadow-orange-500/5 hover:-translate-y-0.5"
-            >
-              <!-- Card Top -->
-              <div>
-                <div class="flex items-start justify-between gap-2 mb-3">
-                  <span class="text-xs font-bold text-orange-400 font-mono bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
-                    {{ parseRunName(run.id).strategy }}
-                  </span>
-                  <ChevronRight class="w-4 h-4 text-slate-600 group-hover:text-orange-400 transition" />
-                </div>
-                
-                <h3 class="text-[10px] font-mono text-slate-500 break-all mb-4">{{ run.id }}</h3>
-
-                <!-- Range & Time -->
-                <div class="flex flex-col gap-2 font-mono text-[10px] text-slate-400 mb-5 border-t border-slate-900/80 pt-3">
-                  <div class="flex items-center gap-1.5">
-                    <Calendar class="w-3.5 h-3.5 text-slate-600" />
-                    <span>回测区间: {{ parseRunName(run.id).period }}</span>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <Clock class="w-3.5 h-3.5 text-slate-600" />
-                    <span>执行时间: {{ parseRunName(run.id).runTime }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Card Bottom Stats -->
-              <div class="grid grid-cols-2 gap-2 border-t border-slate-900/80 pt-3 font-mono">
-                <div class="bg-slate-950/40 p-2 rounded border border-slate-900/60 flex flex-col justify-center">
-                  <span class="text-[8px] text-slate-500">夏普比率</span>
-                  <span class="text-xs font-bold text-slate-300 mt-0.5">{{ run.summary?.sharpe_ratio?.toFixed(2) || 'N/A' }}</span>
-                </div>
-                <div class="bg-slate-950/40 p-2 rounded border border-slate-900/60 flex flex-col justify-center">
-                  <span class="text-[8px] text-slate-500">最大回撤</span>
-                  <span class="text-xs font-bold text-rose-400 mt-0.5">{{ run.summary?.max_drawdown ? (run.summary.max_drawdown * 100).toFixed(1) + '%' : 'N/A' }}</span>
-                </div>
-                <div class="bg-slate-950/40 p-2 rounded border border-slate-900/60 flex flex-col justify-center">
-                  <span class="text-[8px] text-slate-500">胜率</span>
-                  <span class="text-xs font-bold text-emerald-400 mt-0.5">{{ run.summary?.win_rate ? (run.summary.win_rate * 100).toFixed(1) + '%' : 'N/A' }}</span>
-                </div>
-                <div class="bg-slate-950/40 p-2 rounded border border-slate-900/60 flex flex-col justify-center">
-                  <span class="text-[8px] text-slate-500">净利润</span>
-                  <span
-                    class="text-xs font-bold mt-0.5"
-                    :class="(run.summary?.net_profit || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'"
+          <!-- List display of runs -->
+          <div v-else class="bg-slate-900/10 border border-slate-900 rounded-xl overflow-hidden shadow-lg">
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse font-mono text-xs text-left">
+                <thead>
+                  <tr class="bg-slate-950/40 border-b border-slate-900 text-slate-500 font-bold select-none">
+                    <th class="py-3.5 px-5">策略名称</th>
+                    <th class="py-3.5 px-4">执行时间</th>
+                    <th class="py-3.5 px-4">回测区间</th>
+                    <th class="py-3.5 px-4 text-center">夏普比率</th>
+                    <th class="py-3.5 px-4 text-center">最大回撤</th>
+                    <th class="py-3.5 px-4 text-center">胜率</th>
+                    <th class="py-3.5 px-5 text-right">净利润</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-900/50">
+                  <tr
+                    v-for="run in scannedRuns"
+                    :key="run.id"
+                    @click="selectRun(run)"
+                    class="hover:bg-slate-900/40 transition duration-150 cursor-pointer group"
                   >
-                    {{ (run.summary?.net_profit || 0) >= 0 ? '+' : '' }}${{ run.summary?.net_profit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00' }}
-                  </span>
-                </div>
-              </div>
+                    <!-- Strategy Name -->
+                    <td class="py-4 px-5 font-bold">
+                      <span class="text-orange-400 group-hover:text-orange-300 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20 text-[10px]">
+                        {{ parseRunName(run.id).strategy }}
+                      </span>
+                    </td>
+                    <!-- Executed Time -->
+                    <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                      {{ parseRunName(run.id).runTime }}
+                    </td>
+                    <!-- Backtest Period -->
+                    <td class="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                      {{ parseRunName(run.id).period }}
+                    </td>
+                    <!-- Sharpe Ratio -->
+                    <td class="py-4 px-4 text-center font-bold text-slate-300">
+                      {{ run.summary?.sharpe_ratio != null ? run.summary.sharpe_ratio.toFixed(2) : 'N/A' }}
+                    </td>
+                    <!-- Max Drawdown -->
+                    <td class="py-4 px-4 text-center font-bold text-rose-400">
+                      {{ run.summary?.max_drawdown != null ? (run.summary.max_drawdown * 100).toFixed(1) + '%' : 'N/A' }}
+                    </td>
+                    <!-- Win Rate -->
+                    <td class="py-4 px-4 text-center font-bold text-emerald-400">
+                      {{ run.summary?.win_rate != null ? (run.summary.win_rate * 100).toFixed(1) + '%' : 'N/A' }}
+                    </td>
+                    <!-- Net Profit -->
+                    <td class="py-4 px-5 text-right font-bold font-mono">
+                      <span :class="(run.summary?.net_profit || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'">
+                        {{ (run.summary?.net_profit || 0) >= 0 ? '+' : '' }}${{ run.summary?.net_profit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00' }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
